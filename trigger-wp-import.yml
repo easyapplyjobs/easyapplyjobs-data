@@ -1,9 +1,10 @@
-name: Trigger WP All Import on CSV Update
+name: Trigger WP All Import
 
 on:
   push:
     paths:
-      - jobs.csv   # Only run when jobs.csv is changed
+      - jobs.csv        # Run when jobs.csv is updated
+  workflow_dispatch:    # Allow manual runs
 
 permissions:
   contents: read
@@ -13,21 +14,32 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Wait for RAW CDN to be updated
+      - name: Wait for RAW CSV to be accessible
         run: |
           set -euo pipefail
           RAW_URL="https://raw.githubusercontent.com/easyapplyjobs/easyapplyjobs-data/main/jobs.csv"
           MAX_TRIES=40
           SLEEP=5
-          echo "Waiting for RAW CSV to be fully updated..."
+          echo "⏳ Waiting for RAW CSV to be accessible..."
           for i in $(seq 1 $MAX_TRIES); do
             if curl -s --fail "$RAW_URL" -o /dev/null; then
-              echo "RAW CSV accessible!"
+              echo "✅ RAW CSV is accessible!"
               break
             fi
             echo "Attempt $i/$MAX_TRIES: RAW CSV not yet accessible, sleeping $SLEEP seconds..."
             sleep $SLEEP
           done
+
+      - name: Verify CSV is non-empty
+        run: |
+          set -euo pipefail
+          RAW_URL="https://raw.githubusercontent.com/easyapplyjobs/easyapplyjobs-data/main/jobs.csv"
+          SIZE=$(curl -sI "$RAW_URL" | grep -i Content-Length | awk '{print $2}' | tr -d '\r')
+          if [ -z "$SIZE" ] || [ "$SIZE" -eq 0 ]; then
+            echo "❌ CSV is empty, aborting WP All Import trigger"
+            exit 1
+          fi
+          echo "✅ CSV size: $SIZE bytes"
 
       - name: Trigger WP All Import
         env:
@@ -35,6 +47,9 @@ jobs:
           WP_IMPORT_KEY: ${{ secrets.WP_IMPORT_KEY }}
           WP_IMPORT_ID: ${{ secrets.WP_IMPORT_ID }}
         run: |
+          set -euo pipefail
           echo "🚀 Triggering WP All Import..."
-          curl -v "${WP_SITE}/wp-load.php?import_key=${WP_IMPORT_KEY}&import_id=${WP_IMPORT_ID}&action=trigger"
-
+          curl -s "${WP_SITE}/wp-load.php?import_key=${WP_IMPORT_KEY}&import_id=${WP_IMPORT_ID}&action=trigger"
+          echo "⏳ Triggering processing..."
+          curl -s "${WP_SITE}/wp-load.php?import_key=${WP_IMPORT_KEY}&import_id=${WP_IMPORT_ID}&action=processing"
+          echo "✅ WP All Import triggered and processing started successfully"
