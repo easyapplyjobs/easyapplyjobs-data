@@ -1,8 +1,52 @@
-- name: Trigger & Poll WP All Import Until Complete (GitHub) 🔄
+name: Trigger WP All Import
+
+on:
+  push:
+    paths:
+      - data/jobs.csv  # Use the correct path based on scraper output
+  workflow_dispatch:  # Allow manual runs
+
+permissions:
+  contents: read
+
+jobs:
+  trigger_wp_import:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Wait for RAW CSV to be accessible
+        run: |
+          set -euo pipefail
+          # NOTE: Adjust the branch name if you are not using 'main'
+          RAW_URL="https://raw.githubusercontent.com/${{ github.repository }}/main/data/jobs.csv"
+          MAX_TRIES=40
+          SLEEP=5
+          echo "⏳ Waiting for RAW CSV to be accessible..."
+          for i in $(seq 1 $MAX_TRIES); do
+            if curl -s --fail "$RAW_URL" -o /dev/null; then
+              echo "✅ RAW CSV is accessible!"
+              break
+            fi
+            echo "Attempt $i/$MAX_TRIES: RAW CSV not yet accessible, sleeping $SLEEP seconds..."
+            sleep $SLEEP
+          done
+
+      - name: Verify CSV is non-empty
+        run: |
+          set -euo pipefail
+          RAW_URL="https://raw.githubusercontent.com/${{ github.repository }}/main/data/jobs.csv"
+          SIZE=$(curl -sI "$RAW_URL" | grep -i Content-Length | awk '{print $2}' | tr -d '\r')
+          if [ -z "$SIZE" ] || [ "$SIZE" -eq 0 ]; then
+            echo "❌ CSV is empty, aborting WP All Import trigger"
+            exit 1
+          fi
+          echo "✅ CSV size: $SIZE bytes"
+
+      - name: Trigger & Poll WP All Import Until Complete (GitHub) 🔄
         env:
           WP_SITE: ${{ secrets.WP_SITE }}
-          WP_IMPORT_KEY: S5lQUiQkUZ  # Use the hardcoded value confirmed in our chat
-          WP_IMPORT_ID: 14          # Use the hardcoded value confirmed in our chat
+          WP_IMPORT_KEY: S5lQUiQkUZ  # Hardcoded, confirmed value
+          WP_IMPORT_ID: 14          # Hardcoded, confirmed value
         run: |
           set -euo pipefail
           
@@ -22,7 +66,7 @@
             STATUS_CODE=$(curl -s "$IMPORT_COMMAND_URL")
             
             if [ "$STATUS_CODE" == "0" ]; then
-              echo "✅ WP All Import completed successfully!"
+              echo "✅ WP All Import completed successfully in $i attempts."
               exit 0
             fi
             
