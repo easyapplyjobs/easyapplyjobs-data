@@ -1,9 +1,10 @@
-name: Trigger WP All Import on CSV Update
+name: Trigger WP All Import
 
 on:
   push:
     paths:
-      - jobs.csv   # Only run when jobs.csv is changed
+      - jobs.csv        # Run when jobs.csv is updated
+  workflow_dispatch:    # Allow manual runs
 
 permissions:
   contents: read
@@ -13,11 +14,29 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
+      - name: Wait for RAW CSV to be accessible
+        run: |
+          set -euo pipefail
+          RAW_URL="https://raw.githubusercontent.com/easyapplyjobs/easyapplyjobs-data/main/jobs.csv"
+          MAX_TRIES=40
+          SLEEP=5
+          echo "⏳ Waiting for RAW CSV to be accessible..."
+          for i in $(seq 1 $MAX_TRIES); do
+            if curl -s --fail "$RAW_URL" -o /dev/null; then
+              echo "✅ RAW CSV is accessible!"
+              break
+            fi
+            echo "Attempt $i/$MAX_TRIES: RAW CSV not yet accessible, sleeping $SLEEP seconds..."
+            sleep $SLEEP
+          done
+
       - name: Trigger WP All Import
         env:
           WP_SITE: ${{ secrets.WP_SITE }}
           WP_IMPORT_KEY: ${{ secrets.WP_IMPORT_KEY }}
           WP_IMPORT_ID: ${{ secrets.WP_IMPORT_ID }}
         run: |
+          set -euo pipefail
           echo "🚀 Triggering WP All Import..."
           curl -v "${WP_SITE}/wp-load.php?import_key=${WP_IMPORT_KEY}&import_id=${WP_IMPORT_ID}&action=trigger"
+          echo "✅ WP All Import triggered successfully"
