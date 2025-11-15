@@ -1,0 +1,25 @@
+name: Test WP All Import Trigger
+
+on:
+  workflow_dispatch:  # Manual trigger only
+
+permissions:
+  contents: read
+
+jobs:
+  trigger_wp_import:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Trigger WP All Import
+        env:
+          WP_SITE: ${{ secrets.WP_SITE }}
+          WP_IMPORT_KEY: ${{ secrets.WP_IMPORT_KEY }}
+          WP_IMPORT_ID: ${{ secrets.WP_IMPORT_ID }}
+        run: |
+          set -euo pipefail
+          echo "🚀 Triggering WP All Import for testing..."
+          curl -v "${WP_SITE}/wp-load.php?import_key=${WP_IMPORT_KEY}&import_id=${WP_IMPORT_ID}&action=trigger"
+          echo "⏳ Triggering processing..."
+          curl -v "${WP_SITE}/wp-load.php?import_key=${WP_IMPORT_KEY}&import_id=${WP_IMPORT_ID}&action=processing"
+          echo "✅ WP All Import test trigger completed"
