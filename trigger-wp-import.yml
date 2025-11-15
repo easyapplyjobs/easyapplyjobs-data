@@ -1,4 +1,4 @@
-- name: Trigger and Poll WP All Import Until Complete 🔄
+- name: Trigger WP All Import and Rely on Server Cron 🚀
         env:
           WP_SITE: ${{ secrets.WP_SITE }}
           WP_IMPORT_KEY: ${{ secrets.WP_IMPORT_KEY }}
@@ -7,37 +7,12 @@
           set -euo pipefail
           IMPORT_URL="${WP_SITE}/wp-load.php?import_key=${WP_IMPORT_KEY}&import_id=${WP_IMPORT_ID}"
           
-          echo "1/3 🚀 Triggering initial import..."
-          # Use action=trigger to initiate the import
+          echo "1/2 🚀 Triggering initial import..."
+          # action=trigger tells WP All Import a new file is ready
           curl -s "${IMPORT_URL}&action=trigger"
           
-          echo "2/3 ⏳ Starting processing loop..."
-          # Use action=processing to start the WP-Cron job.
-          # We then switch to 'process' for synchronous polling.
+          echo "2/2 ⏳ Starting processing and relying on server cron to complete..."
+          # action=processing queues the job for the server cron to pick up
           curl -s "${IMPORT_URL}&action=processing"
-
-          MAX_TRIES=60
-          SLEEP_SECONDS=5
           
-          for i in $(seq 1 $MAX_TRIES); do
-            echo "Attempt $i/$MAX_TRIES: Processing records..."
-            
-            # Send the 'process' action and capture the output status code
-            STATUS_CODE=$(curl -s "${IMPORT_URL}&action=process")
-            
-            # WP All Import returns '1' if there are more records, '0' when finished.
-            if [ "$STATUS_CODE" == "0" ]; then
-              echo "3/3 ✅ WP All Import completed successfully!"
-              exit 0
-            fi
-            
-            if [ "$STATUS_CODE" != "1" ]; then
-              echo "🛑 Received unexpected status code: $STATUS_CODE. Aborting import."
-              exit 1
-            fi
-
-            sleep $SLEEP_SECONDS
-          done
-
-          echo "❌ Timed out waiting for WP All Import to finish after $MAX_TRIES attempts."
-          exit 1
+          echo "✅ WP All Import job initiated successfully."
