@@ -1,42 +1,39 @@
-name: Trigger WP All Import
-
-on:
-  push:
-    paths:
-      - jobs.csv        # Run when jobs.csv is updated
-  workflow_dispatch:    # Allow manual runs
-
-permissions:
-  contents: read
-
-jobs:
-  trigger_wp_import:
-    runs-on: ubuntu-latest
-
-    steps:
-      - name: Wait for RAW CSV to be accessible
-        run: |
-          set -euo pipefail
-          RAW_URL="https://raw.githubusercontent.com/easyapplyjobs/easyapplyjobs-data/main/jobs.csv"
-          MAX_TRIES=40
-          SLEEP=5
-          echo "⏳ Waiting for RAW CSV to be accessible..."
-          for i in $(seq 1 $MAX_TRIES); do
-            if curl -s --fail "$RAW_URL" -o /dev/null; then
-              echo "✅ RAW CSV is accessible!"
-              break
-            fi
-            echo "Attempt $i/$MAX_TRIES: RAW CSV not yet accessible, sleeping $SLEEP seconds..."
-            sleep $SLEEP
-          done
-
-      - name: Trigger WP All Import
+- name: Trigger & Poll WP All Import Until Complete (GitHub) 🔄
         env:
           WP_SITE: ${{ secrets.WP_SITE }}
-          WP_IMPORT_KEY: ${{ secrets.WP_IMPORT_KEY }}
-          WP_IMPORT_ID: ${{ secrets.WP_IMPORT_ID }}
+          WP_IMPORT_KEY: S5lQUiQkUZ  # Use the hardcoded value confirmed in our chat
+          WP_IMPORT_ID: 14          # Use the hardcoded value confirmed in our chat
         run: |
           set -euo pipefail
-          echo "🚀 Triggering WP All Import..."
-          curl -v "${WP_SITE}/wp-load.php?import_key=${WP_IMPORT_KEY}&import_id=${WP_IMPORT_ID}&action=trigger"
-          echo "✅ WP All Import triggered successfully"
+          
+          # The single, combined command that performs trigger AND one batch of process
+          IMPORT_COMMAND_URL="${WP_SITE}/wp-load.php?import_key=${WP_IMPORT_KEY}&import_id=${WP_IMPORT_ID}&action=trigger&action=process"
+          
+          MAX_TRIES=60      # Max attempts (10 minutes total, 10s sleep)
+          SLEEP_SECONDS=10  # Sleep time between batches
+          
+          echo "🚀 Starting combined WP All Import: Trigger and Process..."
+          
+          for i in $(seq 1 $MAX_TRIES); do
+            echo "Attempt $i/$MAX_TRIES: Processing batch..."
+            
+            # Use curl to execute the combined command and capture the output status code
+            # WP All Import returns '1' if more records exist, '0' when finished.
+            STATUS_CODE=$(curl -s "$IMPORT_COMMAND_URL")
+            
+            if [ "$STATUS_CODE" == "0" ]; then
+              echo "✅ WP All Import completed successfully!"
+              exit 0
+            fi
+            
+            if [ "$STATUS_CODE" != "1" ]; then
+              echo "🛑 Received unexpected status code: $STATUS_CODE. Aborting import. Check WP All Import status."
+              exit 1
+            fi
+
+            echo "⏳ Batch processed. Records remaining. Sleeping ${SLEEP_SECONDS}s before next batch..."
+            sleep $SLEEP_SECONDS
+          done
+
+          echo "❌ Timed out waiting for WP All Import to finish after $MAX_TRIES attempts (10 minutes)."
+          exit 1
